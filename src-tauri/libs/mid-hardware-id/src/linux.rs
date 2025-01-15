@@ -5,25 +5,28 @@ use std::collections::HashSet;
 use crate::errors::MIDError;
 
 #[cfg(target_os = "linux")]
-use crate::utils::run_shell_comand;
+use std::process::{Command, Stdio};
 
 #[cfg(target_os = "linux")]
 pub(crate) fn get_mid_result() -> Result<String, MIDError> {
-    let machine_output = run_shell_comand(
-        "sh",
-        [
-            "-c",
-            r#"hostnamectl status | awk '/Machine ID:/ {print $3}'; cat /var/lib/dbus/machine-id || true; cat /etc/machine-id || true"#,
-        ],
-    )?;
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("hostnamectl status | awk '/Machine ID:/ {print $3}'; cat /var/lib/dbus/machine-id || true; cat /etc/machine-id || true")
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|_| MIDError::ResultMidError)?;
 
-    let combined_string = process_output(&machine_output);
-
-    if combined_string.is_empty() {
+    if !output.status.success() {
         return Err(MIDError::ResultMidError);
     }
-
-    Ok(combined_string)
+    
+    let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if uuid.is_empty() {
+        return Err(MIDError::ResultMidError);
+    }
+    
+    Ok(uuid)
 }
 
 #[cfg(target_os = "linux")]
